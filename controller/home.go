@@ -2,8 +2,7 @@ package controller
 
 import (
 	"net/http"
-	"subcription-microservice/config"
-	"subcription-microservice/rtop"
+	"rtop/rtop"
 )
 
 func GetInfoMachine(w http.ResponseWriter, r *http.Request) {

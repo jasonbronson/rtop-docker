@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"subcription-microservice/controller"
+	"rtop/controller"
 
 	"github.com/gorilla/mux"
 )
