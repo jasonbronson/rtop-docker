@@ -1,2 +1,1 @@
-test
-
+Runs rtop project in a docker container that on route / will return json data output of machine resources
