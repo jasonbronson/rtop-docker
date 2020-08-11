@@ -3,16 +3,16 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"rtop/routes"
-	"strconv"
 
 	"time"
 )
 
 func main() {
 	r := routes.Router()
-	log.Printf("Listening to http://0.0.0.0:%v/", strconv.Itoa(9999)
-	port := "0.0.0.0:" + strconv.Itoa(9999)
+	log.Printf("Listening to http://0.0.0.0:%v/", os.Getenv("PORT"))
+	port := "0.0.0.0:" + os.Getenv("PORT")
 	srv := &http.Server{
 		Addr: port,
 		// Good practice to set timeouts to avoid Slowloris attacks.

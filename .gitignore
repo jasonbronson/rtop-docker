@@ -4,3 +4,4 @@ bin/*
 minio
 .vscode
 dbdata_postgres
+.DS_Store

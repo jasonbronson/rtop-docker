@@ -5,9 +5,21 @@ services:
       context: .
       dockerfile: Dockerfile
     working_dir: /go/src/rtop
-    command: CompileDaemon -log-prefix=false -build="make build" -command="./bin/rtop"
+    privileged: true
+    command: CompileDaemon -log-prefix=false -build="make build" -command="./bin/rtop-service"
     volumes:
       - ./:/go/src/rtop
+      - /proc/uptime:/tmp/rtop/proc/uptime
+      - /proc/stat:/tmp/rtop/proc/stat
+      - /proc/loadavg:/tmp/rtop/proc/loadavg
+      - /proc/net/dev:/tmp/rtop/proc/net/dev
+      - /proc/meminfo:/tmp/rtop/proc/meminfo
+      - /bin/hostname:/tmp/rtop/bin/hostname
+      - /bin/ip:/tmp/rtop/bin/ip
+      - /sbin/ip:/tmp/rtop/sbin/ip
+      - /bin/df:/tmp/rtop/bin/df
+      - /etc/hostname:/tmp/rtop/etc/hostname
+
     ports:
       - "${PORT}:${PORT}"
     env_file:

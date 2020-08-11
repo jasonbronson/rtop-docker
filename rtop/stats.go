@@ -27,11 +27,14 @@ package rtop
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 type FSInfo struct {
@@ -91,19 +94,66 @@ type Stats struct {
 	CPU          CPUInfo // or []CPUInfo to get all the cpu-core's stats?
 }
 
-func GetAllStats(client *ssh.Client, stats *Stats) {
-	getUptime(client, stats)
-	getHostname(client, stats)
-	getLoad(client, stats)
-	getMemInfo(client, stats)
-	getFSInfo(client, stats)
-	getInterfaces(client, stats)
-	getInterfaceInfo(client, stats)
-	getCPU(client, stats)
+type Load struct {
+	Load1  string
+	Load5  string
+	Load10 string
 }
 
-func getUptime(client *ssh.Client, stats *Stats) (err error) {
-	uptime, err := runCommand(client, "/bin/cat /proc/uptime")
+type StatsDisplay struct {
+	Uptime       string
+	Hostname     string
+	Load1        string
+	Load5        string
+	Load10       string
+	RunningProcs string
+	TotalProcs   string
+	MemTotal     string
+	MemUsed      string
+	MemFree      string
+	MemBuffers   string
+	MemCached    string
+	SwapTotal    string
+	SwapFree     string
+	FSInfos      []FSInfo
+	NetIntf      map[string]NetIntfInfo
+	CPU          CPUInfo
+}
+
+func ParseStatsDisplay(stats Stats, newStats *StatsDisplay) {
+	newStats.Uptime = fmtUptime(&stats)
+	newStats.Hostname = stats.Hostname
+	newStats.Load1 = stats.Load1
+	newStats.Load5 = stats.Load5
+	newStats.Load10 = stats.Load10
+	newStats.RunningProcs = stats.RunningProcs
+	newStats.TotalProcs = stats.TotalProcs
+	used := stats.MemTotal - stats.MemFree - stats.MemBuffers - stats.MemCached
+	newStats.MemTotal = fmtBytes(stats.MemTotal)
+	newStats.MemFree = fmtBytes(stats.MemFree)
+	newStats.MemUsed = fmtBytes(used)
+	newStats.MemBuffers = fmtBytes(stats.MemBuffers)
+	newStats.MemCached = fmtBytes(stats.MemCached)
+	newStats.SwapTotal = fmtBytes(stats.SwapTotal)
+	newStats.SwapFree = fmtBytes(stats.SwapFree)
+	newStats.FSInfos = stats.FSInfos
+	newStats.NetIntf = stats.NetIntf
+	newStats.CPU = stats.CPU
+}
+
+func GetAllStats(stats *Stats) {
+	getUptime(stats)
+	getHostname(stats)
+	getLoad(stats)
+	getMemInfo(stats)
+	getFSInfo(stats)
+	getInterfaces(stats)
+	getInterfaceInfo(stats)
+	getCPU(stats)
+}
+
+func getUptime(stats *Stats) (err error) {
+	uptime, err := ReadFile("/tmp/rtop/proc/uptime")
 	if err != nil {
 		return
 	}
@@ -121,18 +171,17 @@ func getUptime(client *ssh.Client, stats *Stats) (err error) {
 	return
 }
 
-func getHostname(client *ssh.Client, stats *Stats) (err error) {
-	hostname, err := runCommand(client, "/bin/hostname -f")
+func getHostname(stats *Stats) (err error) {
+	hostName, err := ReadFile("/tmp/rtop/etc/hostname")
 	if err != nil {
 		return
 	}
-
-	stats.Hostname = strings.TrimSpace(hostname)
+	stats.Hostname = strings.Replace(hostName, "\n", "", -1)
 	return
 }
 
-func getLoad(client *ssh.Client, stats *Stats) (err error) {
-	line, err := runCommand(client, "/bin/cat /proc/loadavg")
+func getLoad(stats *Stats) (err error) {
+	line, err := ReadFile("/tmp/rtop/proc/loadavg")
 	if err != nil {
 		return
 	}
@@ -153,8 +202,8 @@ func getLoad(client *ssh.Client, stats *Stats) (err error) {
 	return
 }
 
-func getMemInfo(client *ssh.Client, stats *Stats) (err error) {
-	lines, err := runCommand(client, "/bin/cat /proc/meminfo")
+func getMemInfo(stats *Stats) (err error) {
+	lines, err := ReadFile("/tmp/rtop/proc/meminfo")
 	if err != nil {
 		return
 	}
@@ -189,8 +238,8 @@ func getMemInfo(client *ssh.Client, stats *Stats) (err error) {
 	return
 }
 
-func getFSInfo(client *ssh.Client, stats *Stats) (err error) {
-	lines, err := runCommand(client, "/bin/df -B1")
+func getFSInfo(stats *Stats) (err error) {
+	lines, err := runCommand("/tmp/rtop/bin/df", "-B1")
 	if err != nil {
 		return
 	}
@@ -224,17 +273,17 @@ func getFSInfo(client *ssh.Client, stats *Stats) (err error) {
 	return
 }
 
-func getInterfaces(client *ssh.Client, stats *Stats) (err error) {
+func getInterfaces(stats *Stats) (err error) {
 	var lines string
-	lines, err = runCommand(client, "/bin/ip -o addr")
+	lines, err = runCommand("/tmp/rtop/bin/ip", "-o", "addr")
+
 	if err != nil {
 		// try /sbin/ip
-		lines, err = runCommand(client, "/sbin/ip -o addr")
+		lines, err = runCommand("/tmp/rtop/sbin/ip", "-o", "addr")
 		if err != nil {
 			return
 		}
 	}
-
 	if stats.NetIntf == nil {
 		stats.NetIntf = make(map[string]NetIntfInfo)
 	}
@@ -268,8 +317,8 @@ func getInterfaces(client *ssh.Client, stats *Stats) (err error) {
 	return
 }
 
-func getInterfaceInfo(client *ssh.Client, stats *Stats) (err error) {
-	lines, err := runCommand(client, "/bin/cat /proc/net/dev")
+func getInterfaceInfo(stats *Stats) (err error) {
+	lines, err := ReadFile("/tmp/rtop/proc/net/dev")
 	if err != nil {
 		return
 	}
@@ -339,8 +388,8 @@ func parseCPUFields(fields []string, stat *cpuRaw) {
 // the CPU stats that were fetched last time round
 var preCPU cpuRaw
 
-func getCPU(client *ssh.Client, stats *Stats) (err error) {
-	lines, err := runCommand(client, "/bin/cat /proc/stat")
+func getCPU(stats *Stats) (err error) {
+	lines, err := ReadFile("/tmp/rtop/proc/stat")
 	if err != nil {
 		return
 	}
@@ -374,5 +423,32 @@ func getCPU(client *ssh.Client, stats *Stats) (err error) {
 	stats.CPU.Guest = float32(nowCPU.Guest-preCPU.Guest) / total * 100
 END:
 	preCPU = nowCPU
+	return
+}
+
+func ReadFile(fileName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	var line string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line = fmt.Sprintf(line + "\n" + scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+	return line, err
+}
+
+func runCommand(command string, arg ...string) (stdout string, err error) {
+	cmd := exec.Command(command, arg...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err = cmd.Run()
+	stdout = string(out.Bytes())
 	return
 }
