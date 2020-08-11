@@ -1,0 +1,6 @@
+tmp/*
+bin/*
+.env
+minio
+.vscode
+dbdata_postgres

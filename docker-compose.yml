@@ -1,0 +1,14 @@
+version: "3.1"
+services:
+  go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /go/src/rtop
+    command: CompileDaemon -log-prefix=false -build="make build" -command="./bin/rtop"
+    volumes:
+      - ./:/go/src/rtop
+    ports:
+      - "${PORT}:${PORT}"
+    env_file:
+      - ./.env
